@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/CMakeFiles/bootloader
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/CMakeFiles/bootloader.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/CMakeFiles/bootloader-complete.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+C:/Code/eclipse-workspace/IoT_CoAP_Server/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
