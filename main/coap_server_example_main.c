@@ -20,13 +20,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 
 #include "nvs_flash.h"
-
+#include <tcpip_adapter.h>
 #include "protocol_examples_common.h"
 
 #if 1
@@ -35,6 +36,35 @@
 #include "coap_dtls.h"
 #endif
 #include "coap.h"
+
+#include "dht11.h"
+
+
+// Task definitions
+static void coap_example_server(void *p);
+static void DHT11_Test_Task(void *p);
+
+static void hnd_espressif_get(coap_context_t *ctx,
+							  coap_resource_t *resource,
+							  coap_session_t *session,
+							  coap_pdu_t *request,
+							  coap_binary_t *token,
+							  coap_string_t *query,
+							  coap_pdu_t *response
+							  );
+
+#ifdef CONFIG_COAP_MBEDTLS_PKI
+	static int verify_cn_callback(const char *cn,
+								  const uint8_t *asn1_public_cert,
+								  size_t asn1_length,
+								  coap_session_t *session,
+								  unsigned depth,
+								  int validated,
+								  void *arg
+								  );
+#endif /* CONFIG_COAP_MBEDTLS_PKI */
+
+
 
 /* The examples use simple Pre-Shared-Key configuration that you can set via
    'make menuconfig'.
@@ -59,7 +89,7 @@
 
 const static char *TAG = "CoAP_server";
 
-static char espressif_data[100];
+static char espressif_data[20];
 static int espressif_data_len = 0;
 
 #ifdef CONFIG_COAP_MBEDTLS_PKI
@@ -81,73 +111,10 @@ extern uint8_t server_key_start[] asm("_binary_coap_server_key_start");
 extern uint8_t server_key_end[]   asm("_binary_coap_server_key_end");
 #endif /* CONFIG_COAP_MBEDTLS_PKI */
 
-#define INITIAL_DATA "Hello World!"
+#define INITIAL_DATA "-50,1"
 
-/*
- * The resource handler
- */
-static void
-hnd_espressif_get(coap_context_t *ctx, coap_resource_t *resource,
-                  coap_session_t *session,
-                  coap_pdu_t *request, coap_binary_t *token,
-                  coap_string_t *query, coap_pdu_t *response)
-{
-	printf("Got a CoAP GET request\n");
-    coap_add_data_blocked_response(resource, session, request, response, token,
-                                   COAP_MEDIATYPE_TEXT_PLAIN, 0,
-                                   (size_t)espressif_data_len,
-                                   (const u_char *)espressif_data);
 
-}
 
-static void
-hnd_espressif_put(coap_context_t *ctx,
-                  coap_resource_t *resource,
-                  coap_session_t *session,
-                  coap_pdu_t *request,
-                  coap_binary_t *token,
-                  coap_string_t *query,
-                  coap_pdu_t *response)
-{
-	printf("Got a CoAP PUT request\n");
-    size_t size;
-    unsigned char *data;
-
-    coap_resource_notify_observers(resource, NULL);
-
-    if (strcmp (espressif_data, INITIAL_DATA) == 0) {
-        response->code = COAP_RESPONSE_CODE(201);
-    } else {
-        response->code = COAP_RESPONSE_CODE(204);
-    }
-
-    /* coap_get_data() sets size to 0 on error */
-    (void)coap_get_data(request, &size, &data);
-
-    if (size == 0) {      /* re-init */
-        snprintf(espressif_data, sizeof(espressif_data), INITIAL_DATA);
-        espressif_data_len = strlen(espressif_data);
-    } else {
-        espressif_data_len = size > sizeof (espressif_data) ? sizeof (espressif_data) : size;
-        memcpy (espressif_data, data, espressif_data_len);
-    }
-}
-
-static void
-hnd_espressif_delete(coap_context_t *ctx,
-                     coap_resource_t *resource,
-                     coap_session_t *session,
-                     coap_pdu_t *request,
-                     coap_binary_t *token,
-                     coap_string_t *query,
-                     coap_pdu_t *response)
-{
-	printf("Got a CoAP DELETE request\n");
-    coap_resource_notify_observers(resource, NULL);
-    snprintf(espressif_data, sizeof(espressif_data), INITIAL_DATA);
-    espressif_data_len = strlen(espressif_data);
-    response->code = COAP_RESPONSE_CODE(202);
-}
 
 #ifdef CONFIG_COAP_MBEDTLS_PKI
 
@@ -166,6 +133,49 @@ verify_cn_callback(const char *cn,
     return 1;
 }
 #endif /* CONFIG_COAP_MBEDTLS_PKI */
+
+
+
+void app_main(void)
+{
+	printf("Initiation Started\n");
+    ESP_ERROR_CHECK( nvs_flash_init() );
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+	// This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+    // Read "Establishing Wi-Fi or Ethernet Connection" section in
+    // examples/protocols/README.md for more information about this function.
+    //
+    ESP_ERROR_CHECK(example_connect());
+
+    DHT11_init(GPIO_NUM_23);
+	printf("\n\nInitiation Ended\n");
+
+	 // first reading can be off, so we take one and throw the result away;
+	int temprature = DHT11_read().temperature;
+	temprature++;
+
+    xTaskCreate(coap_example_server, "coap", 8 * 1024, NULL, 5, NULL);
+    // xTaskCreate(DHT11_Test_Task, "DHT11_Test_Task", 8 * 1024, NULL, 5, NULL);
+
+
+    tcpip_adapter_ip_info_t ipInfo;
+
+	// IP address.
+	tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
+	printf("My IP: " IPSTR "\n", IP2STR(&ipInfo.ip));
+}
+
+static void DHT11_Test_Task(void *p)
+{
+	while(1)
+	{
+	    printf("Temperature is %d \n", DHT11_read().temperature);
+		vTaskDelay(5000 / portTICK_PERIOD_MS);
+	}
+}
+
 
 static void coap_example_server(void *p)
 {
@@ -278,8 +288,6 @@ static void coap_example_server(void *p)
             goto clean_up;
         }
         coap_register_handler(resource, COAP_REQUEST_GET, hnd_espressif_get);
-        coap_register_handler(resource, COAP_REQUEST_PUT, hnd_espressif_put);
-        coap_register_handler(resource, COAP_REQUEST_DELETE, hnd_espressif_delete);
         /* We possibly want to Observe the GETs */
         coap_resource_set_get_observable(resource, 1);
         coap_add_resource(ctx, resource);
@@ -307,18 +315,44 @@ clean_up:
     vTaskDelete(NULL);
 }
 
-void app_main(void)
+
+// The resource handlers:
+static void
+hnd_espressif_get(coap_context_t *ctx, coap_resource_t *resource,
+                  coap_session_t *session,
+                  coap_pdu_t *request, coap_binary_t *token,
+                  coap_string_t *query, coap_pdu_t *response)
 {
-	printf("Starting\n");
-    ESP_ERROR_CHECK( nvs_flash_init() );
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+	printf("Got a CoAP GET request\n");
 
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    ESP_ERROR_CHECK(example_connect());
+	// Update reading:
+	// string format is "temperature,position", with position being 1
+	snprintf(espressif_data, sizeof(espressif_data), "%d,1",DHT11_read().temperature);
+	printf("%d,1",DHT11_read().temperature);
+	printf("\n");
+	espressif_data_len = strlen(espressif_data);
 
-    xTaskCreate(coap_example_server, "coap", 8 * 1024, NULL, 5, NULL);
+    coap_add_data_blocked_response(resource, session, request, response, token,
+                                   COAP_MEDIATYPE_TEXT_PLAIN, 0,
+                                   (size_t)espressif_data_len,
+                                   (const u_char *)espressif_data);
+
 }
+
+#ifdef CONFIG_COAP_MBEDTLS_PKI
+
+static int
+verify_cn_callback(const char *cn,
+                   const uint8_t *asn1_public_cert,
+                   size_t asn1_length,
+                   coap_session_t *session,
+                   unsigned depth,
+                   int validated,
+                   void *arg
+                  )
+{
+    coap_log(LOG_INFO, "CN '%s' presented by server (%s)\n",
+             cn, depth ? "CA" : "Certificate");
+    return 1;
+}
+#endif /* CONFIG_COAP_MBEDTLS_PKI */
