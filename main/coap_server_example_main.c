@@ -20,7 +20,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "freertos/semphr.h"
 
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -42,7 +41,6 @@
 
 // Task definitions
 static void coap_example_server(void *p);
-static void DHT11_Test_Task(void *p);
 
 static void hnd_espressif_get(coap_context_t *ctx,
 							  coap_resource_t *resource,
@@ -156,25 +154,11 @@ void app_main(void)
 	int temprature = DHT11_read().temperature;
 	temprature++;
 
+
+
     xTaskCreate(coap_example_server, "coap", 8 * 1024, NULL, 5, NULL);
-    // xTaskCreate(DHT11_Test_Task, "DHT11_Test_Task", 8 * 1024, NULL, 5, NULL);
-
-
-    tcpip_adapter_ip_info_t ipInfo;
-
-	// IP address.
-	tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
-	printf("My IP: " IPSTR "\n", IP2STR(&ipInfo.ip));
 }
 
-static void DHT11_Test_Task(void *p)
-{
-	while(1)
-	{
-	    printf("Temperature is %d \n", DHT11_read().temperature);
-		vTaskDelay(5000 / portTICK_PERIOD_MS);
-	}
-}
 
 
 static void coap_example_server(void *p)
@@ -294,6 +278,12 @@ static void coap_example_server(void *p)
 
         wait_ms = COAP_RESOURCE_CHECK_TIME * 1000;
 
+    	tcpip_adapter_ip_info_t ipInfo;
+
+    	// IP address.
+    	tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
+    	printf("My IP: " IPSTR "\n", IP2STR(&ipInfo.ip));
+
         while (1) {
             int result = coap_run_once(ctx, wait_ms);
             if (result < 0) {
@@ -328,8 +318,6 @@ hnd_espressif_get(coap_context_t *ctx, coap_resource_t *resource,
 	// Update reading:
 	// string format is "temperature,position", with position being 1
 	snprintf(espressif_data, sizeof(espressif_data), "%d,1",DHT11_read().temperature);
-	printf("%d,1",DHT11_read().temperature);
-	printf("\n");
 	espressif_data_len = strlen(espressif_data);
 
     coap_add_data_blocked_response(resource, session, request, response, token,
